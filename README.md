@@ -86,7 +86,7 @@ The resulting system provides several notable benefits. Firstly, it establishes 
 
 However, this approach also introduces potential bottlenecks and problems. The broker becomes a single point of failure, which can compromise system reliability if not properly managed. Moreover, while using TCP sockets to simulate publish-subscribe behavior serves an educational purpose, it is less practical for real-world distributed systems compared to specialized tools like Kafka, MQTT, or Redis pub/sub, which offer more robust and scalable solutions.
 
-Despite these limitations, the project effectively achieves its goal of demonstrating indirect communication patterns. However, the given example—based on a simple tic-tac-toe game—did not offer much room for complexity, as the interaction between players was highly structured and followed a linear sequence. This constrained the communication flow, limiting the opportunity to showcase more dynamic or asynchronous messaging scenarios typical of distributed systems.
+Despite these limitations, the project effectively achieves its goal of demonstrating indirect communication patterns. However, the given example, based on a simple Tic-Tac-Toe game, did not offer much room for complexity, as the interaction between players was highly structured and followed a linear sequence. This constrained the communication flow, limiting the opportunity to showcase more dynamic or asynchronous messaging scenarios typical of distributed systems, as it could have been done with a system similar to the lottery one from the first practice.
 
 ---
 
