@@ -7,53 +7,71 @@ PORT = 9000
 
 def wait_for_move(s):
     """
-    Continuously listens for messages from the broker, including opponent moves and status updates.
-    If a move message is received, it parses and displays the move. Other messages are printed as
-    general updates. It handles disconnections and malformed messages.
+    Continuously listens for messages from the broker, these being opponent moves and status
+    updates. If a move message is received, it parses and displays the move. Other messages are
+    printed as updates. It handles regular and win-related disconnections and malformed messages.
     """
 
     try:
         while True:
             msg = s.recv(1024).decode()
 
-            # Only parse messages that look like moves
+            # Move type messages
             parts = msg.split(",")
             if len(parts) == 3 and parts[2] in ("X", "O"):
                 row = int(parts[0])
                 col = int(parts[1])
                 opp_topic = parts[2]
+                # Console format, entirely for visual purposes
                 print(f"\n\n\t- Opponent {opp_topic} played: Row {row}, Column {col} -")
                 print("\n> ", end="")
+
             else:
+                # Opponent's turn warning
                 if msg == "Opponent's turn":
                     print(f"\n\t\t- {msg} -\n> ", end="")
+
+                # Victory message
+                elif msg in ("X", "O"):
+                    print(f"\n\t\t### THE WINNER IS {msg} ###")
+                    s.close()
+
+                # Draw message
+                elif msg == "Draw":
+                    print("\n\t\t### IT'S A DRAW ###")
+                    s.close()
+
+                # Status messages (e.g.: "bad format", "cell not empty")
                 else:
                     print(f"{msg}\n> ", end="")
 
+    # Reception exceptions handling, omitting socket closing ones, related to the win and end
     except Exception as e:
-        print(f"\nError receiving move: {e}")
+        if isinstance(e, OSError):
+            pass
+        else:
+            print(f"\nError receiving move: {e}")
 
 
 def start(s, topic):
     """
-    Starts the player's game loop. Sends moves to the broker and listens for responses. It launches
-    a background thread to receive opponent moves while the player enters theirs. In case it is not
-    the player's turn, it waits until the broker allows it to continue.
+    Starts the game loop for a player, allowing them to continuously input moves and send them to
+    the broker to trigger actions in the game. Additionally, it creates a thread to run concurrently
+    and listen to the opponent's moves.
     """
 
-    print(f"\nYou are player {topic.upper()}, enter your move (row,col)")
+    print(f"\nYou are player {topic}, enter your move (row,col)")
 
     # Thread to listen for opponent moves
-    threading.Thread(target=wait_for_move, args=(s,), daemon=True).start()
+    threading.Thread(target=wait_for_move, args=(s,)).start()
 
-    try:
+    try:  # Continuous message construction and forwarding to broker
         while True:
-
-            # Message construction and forwarding to broker
             move = input("> ").strip()
             move = f"{move},{topic}"
             s.send(move.encode())
 
+    # Possible errors when sending moves (e.g.: broker disconnection)
     except Exception as e:
         print(f"Error sending move: {e}")
 
@@ -72,13 +90,13 @@ if __name__ == "__main__":
                 s.send(topic.encode())
 
                 msg = s.recv(1024).decode()
-                if msg in ["X", "O"]:
-                    current_turn = msg
+                if msg == "OK":
                     start(s, topic)  # Successful registration
                     break
                 else:
                     print(msg)  # Unsuccessful registration, retry
 
+    # Handle ctrl+C or manual interruption to close the game
     except KeyboardInterrupt:
         print("\nGame ended by the player.")
         s.close()

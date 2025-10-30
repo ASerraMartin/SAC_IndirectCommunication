@@ -5,9 +5,10 @@ import threading
 HOST = "localhost"
 PORT = 9000
 
+# Broker socket
 s = None
 
-# By default, 'X' starts
+# By default, 'X' starts (arbitrarily chosen)
 current_turn = "X"
 
 # Possible topics and their players
@@ -21,9 +22,38 @@ board = [
 ]
 
 
+def check_winner():
+    """
+    Checks all rows, columns, and the two diagonals of the game board for a winning condition. Also
+    detects if the board is full and the game ends in a draw. If none is satisfied, returns None.
+    """
+
+    # Check every row
+    for row in range(3):
+        if board[row][0] == board[row][1] == board[row][2] and board[row][0] != "":
+            return board[row][0]
+
+    # Check every column
+    for col in range(3):
+        if board[0][col] == board[1][col] == board[2][col] and board[0][col] != "":
+            return board[0][col]
+
+    # Check diagonals
+    if board[0][0] != "" and board[0][0] == board[1][1] == board[2][2]:
+        return board[0][0]
+    if board[0][2] != "" and board[0][2] == board[1][1] == board[2][0]:
+        return board[0][2]
+
+    # Check for a draw
+    if all(cell != "" for row in board for cell in row):
+        return "Draw"
+
+    return None
+
+
 def print_board():
     """
-    Prints the board in the terminal, with an ASCII format.
+    Prints the game board in the terminal, with an ASCII friendly format.
     """
 
     print("-------------")
@@ -49,7 +79,7 @@ def release_topic(target):
 
 def is_valid(row, col):
     """
-    Checks if the move is within the board's bounds and the cell is empty.
+    Checks if the move is within the game board's bounds and if the cell is empty.
     """
 
     if not (0 <= row < 3 and 0 <= col < 3):
@@ -66,6 +96,9 @@ def handle_messages(player):
     Handles incoming messages from a connected player during the game. Receives the move data with
     format 'row,col,topic' and verifies if it is the player's turn. If the move is valid, it sends
     it to the opponent and updates the turn. Out-of-turn moves are ignored.
+
+    Every round the win condition is checked, if a win or draw occurs, all players are notified and
+    shut down right after.
     """
 
     global current_turn
@@ -75,8 +108,7 @@ def handle_messages(player):
             msg = player.recv(1024).decode()
             print(f"Received: '{msg}'")
 
-            # Extract move details from the message
-            try:
+            try:  # Extract move details from the message
                 row_str, col_str, topic = msg.split(",")
                 row = int(row_str)
                 col = int(col_str)
@@ -89,7 +121,6 @@ def handle_messages(player):
 
                 # Check if the move is valid
                 ok, reason = is_valid(row, col)
-
                 if not ok:
                     print(f"Invalid move: {reason}")
                     player.send(f"Invalid move: {reason}".encode())
@@ -98,7 +129,7 @@ def handle_messages(player):
             # In case of incorrect format, an exception is thrown
             # and has to be handled instead of using regular logic
             except Exception:
-                print(f"Invalid move: Incorrect format")
+                print("Invalid move: Incorrect format")
                 player.send("Invalid move, the format is not correct".encode())
                 continue
 
@@ -107,6 +138,19 @@ def handle_messages(player):
             board[row][col] = topic
             interface.mark_square(row, col, topic)
             print_board()
+
+            # Check for a winner
+            winner = check_winner()
+            if winner is not None:
+                if winner != "Draw":
+                    print(f"{winner} wins the game.")
+                    message = winner
+                else:
+                    print("Game ends in a draw.")
+                    message = "Draw"
+
+                for p in topics.values():
+                    p.send(message.encode())
 
             # Select the correct topic to send the message
             opponent_topic = "O" if topic == "X" else "X"
@@ -119,7 +163,8 @@ def handle_messages(player):
 
     # Possible errors while handling messages (e.g.: disconnection)
     except Exception as e:
-        print(f"Error handling message from player {topic}: {e}")
+        if not isinstance(e, ConnectionResetError):
+            print(f"Error handling message from player {topic}: {e}")
     finally:
         release_topic(player)
         player.close()
@@ -144,7 +189,7 @@ def register_player(player):
                 continue
 
             # Subscribe the player to the topic if the verification was correct
-            player.send(current_turn.encode())
+            player.send("OK".encode())
             topics[topic] = player
             print(f"Player {topic} connected")
             break
@@ -157,6 +202,10 @@ def register_player(player):
 
 
 def start_broker():
+    """
+    Initializes and runs the Tic-Tac-Toe game broker. Each player is registered and handled in a
+    separate thread. Listens for OSError as a way to allow a correct shutdown.
+    """
 
     global s
 
@@ -175,22 +224,29 @@ def start_broker():
 
             # Separate thread to handle messages from the players
             threading.Thread(target=handle_messages, args=(player,)).start()
-    except OSError:
+
+    except OSError:  # Controlled exception to allow a correct shutdown
         print("\nGame ended by the broker.")
 
 
 if __name__ == "__main__":
 
+    # Broker in a separate thread
     threading.Thread(target=start_broker).start()
-    try:
+
+    try:  # Launch the GUI
         interface.run()
 
+    # Handle ctrl+C or manual interruption to close the game
     except KeyboardInterrupt:
         print("\nClosing game...")
+
+        # Close the GUI all player connections and the broker socket
         interface.window.destroy()
         for player in topics.values():
             if player:
                 player.close()
         s.close()
+
         print("Connections closed.\n")
         exit(0)
