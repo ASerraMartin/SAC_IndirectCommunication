@@ -1,8 +1,11 @@
 import socket
+import interface
 import threading
 
 HOST = "localhost"
 PORT = 9000
+
+s = None
 
 # By default, 'X' starts
 current_turn = "X"
@@ -11,7 +14,11 @@ current_turn = "X"
 topics = {"X": None, "O": None}
 
 # 3x3 tic-tac-toe board
-board = [["", "", ""], ["", "", ""], ["", "", ""]]
+board = [
+    ["", "", ""],
+    ["", "", ""],
+    ["", "", ""],
+]
 
 
 def print_board():
@@ -98,6 +105,7 @@ def handle_messages(player):
             # Move registration
             print("Valid move")
             board[row][col] = topic
+            interface.mark_square(row, col, topic)
             print_board()
 
             # Select the correct topic to send the message
@@ -107,7 +115,7 @@ def handle_messages(player):
 
             # Update turn
             current_turn = opponent_topic
-            player.send("Waiting for the opponent...".encode())
+            player.send("Opponent's turn".encode())
 
     # Possible errors while handling messages (e.g.: disconnection)
     except Exception as e:
@@ -148,7 +156,9 @@ def register_player(player):
         player.close()
 
 
-if __name__ == "__main__":
+def start_broker():
+
+    global s
 
     # TCP socket creation and binding to localhost:9000
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -156,6 +166,7 @@ if __name__ == "__main__":
     s.listen()
 
     print(f"Waiting for players on {HOST}:{PORT}")
+
     try:
         while True:
             # Player connection and registration with their chosen topic
@@ -164,11 +175,22 @@ if __name__ == "__main__":
 
             # Separate thread to handle messages from the players
             threading.Thread(target=handle_messages, args=(player,)).start()
+    except OSError:
+        print("\nGame ended by the broker.")
+
+
+if __name__ == "__main__":
+
+    threading.Thread(target=start_broker).start()
+    try:
+        interface.run()
 
     except KeyboardInterrupt:
-        print("\nGame ended by the broker.")
+        print("\nClosing game...")
+        interface.window.destroy()
         for player in topics.values():
             if player:
                 player.close()
         s.close()
-        print("Connection closed.\n")
+        print("Connections closed.\n")
+        exit(0)

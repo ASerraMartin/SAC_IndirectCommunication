@@ -4,8 +4,6 @@ import threading
 HOST = "localhost"
 PORT = 9000
 
-move_received_event = threading.Event()
-
 
 def wait_for_move(s):
     """
@@ -13,11 +11,9 @@ def wait_for_move(s):
     If a move message is received, it parses and displays the move. Other messages are printed as
     general updates. It handles disconnections and malformed messages.
     """
-    global current_turn
 
     try:
         while True:
-            move_received_event.set()
             msg = s.recv(1024).decode()
 
             # Only parse messages that look like moves
@@ -27,9 +23,12 @@ def wait_for_move(s):
                 col = int(parts[1])
                 opp_topic = parts[2]
                 print(f"\n\n\t- Opponent {opp_topic} played: Row {row}, Column {col} -")
-                print("\nEnter your move (row,col): ", end="")
+                print("\n> ", end="")
             else:
-                print(f"{msg}\n")
+                if msg == "Opponent's turn":
+                    print(f"\n\t\t- {msg} -\n> ", end="")
+                else:
+                    print(f"{msg}\n> ", end="")
 
     except Exception as e:
         print(f"\nError receiving move: {e}")
@@ -42,17 +41,16 @@ def start(s, topic):
     the player's turn, it waits until the broker allows it to continue.
     """
 
-    print(f"\nYou are player {topic.upper()}")
+    print(f"\nYou are player {topic.upper()}, enter your move (row,col)")
 
     # Thread to listen for opponent moves
     threading.Thread(target=wait_for_move, args=(s,), daemon=True).start()
 
     try:
         while True:
-            move_received_event.wait()
 
             # Message construction and forwarding to broker
-            move = input(f"Enter your move (row,col): ").strip()
+            move = input("> ").strip()
             move = f"{move},{topic}"
             s.send(move.encode())
 
@@ -68,7 +66,7 @@ if __name__ == "__main__":
     try:
         while True:
             # Attempt to register a player with a topic ('X' or 'O')
-            topic = input("\nChoose 'X' or 'O': ").strip().upper()
+            topic = input("\n\tChoose 'X' or 'O': ").strip().upper()
 
             if topic:  # Only send if the message has content
                 s.send(topic.encode())

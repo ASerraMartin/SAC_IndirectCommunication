@@ -25,12 +25,21 @@ canvas = tk.Canvas(window, width=SIZE, height=SIZE, bg=BG)
 for i in range(1, 3):
     x = MARGIN + i * SQUARE_SIZE
     y = MARGIN + i * SQUARE_SIZE
-    # Columns 
+    # Columns
     canvas.create_line(x, MARGIN, x, SIZE - MARGIN, fill=LINE_BG, width=15)
     canvas.create_line(x, MARGIN, x, SIZE - MARGIN, fill=LINE_FG, width=5)
     # Rows
     canvas.create_line(MARGIN, y, SIZE - MARGIN, y, fill=LINE_BG, width=15)
     canvas.create_line(MARGIN, y, SIZE - MARGIN, y, fill=LINE_FG, width=5)
+
+# Add indicators
+for row in range(3):
+    for col in range(3):
+        x = MARGIN + col * SQUARE_SIZE + SQUARE_SIZE // 2
+        y = MARGIN + row * SQUARE_SIZE + SQUARE_SIZE // 2
+        canvas.create_text(
+            x, y, text=f"{row},{col}", fill=LINE_BG, font=("Consolas", 50, "bold")
+        )
 
 canvas.pack()
 
@@ -39,4 +48,12 @@ x_img = tk.PhotoImage(file="graphics/x.png")
 o_img = tk.PhotoImage(file="graphics/o.png")
 
 
-window.mainloop()
+def mark_square(row, col, symbol):
+    x = MARGIN + col * SQUARE_SIZE + SQUARE_SIZE // 2
+    y = MARGIN + row * SQUARE_SIZE + SQUARE_SIZE // 2
+    img = x_img if symbol == "X" else o_img
+    canvas.create_image(x, y, anchor="center", image=img)
+
+
+def run():
+    window.mainloop()
