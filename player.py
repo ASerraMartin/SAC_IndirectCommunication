@@ -1,4 +1,5 @@
-import socket
+import zmq
+import sys
 import threading
 
 HOST = "localhost"
@@ -18,7 +19,7 @@ def wait_for_move(s):
 
             # Move type messages
             parts = msg.split(",")
-            if len(parts) == 3 and parts[2] in ("X", "O"):
+            if len(parts) == 2:
                 row = int(parts[0])
                 col = int(parts[1])
                 opp_topic = parts[2]
@@ -50,54 +51,98 @@ def wait_for_move(s):
         if isinstance(e, OSError):
             pass
         else:
-            print(f"\nError receiving move: {e}")
+            print(f"It's your turn, {self.topic}!")
 
+    def start(self):
 
-def start(s, topic):
-    """
-    Starts the game loop for a player, allowing them to continuously input moves and send them to
-    the broker to trigger actions in the game. Additionally, it creates a thread to run concurrently
-    and listen to the opponent's moves.
-    """
+        print("You start!" if self.topic == "X" else "Waiting for opponent...")
 
-    print(f"\nYou are player {topic}, enter your move (row,col)")
+        # Threads for publishing and receiving
+        pub_thread = threading.Thread(target=self.publish, daemon=True)
+        sub_thread = threading.Thread(target=self.receive, daemon=True)
 
-    # Thread to listen for opponent moves
-    threading.Thread(target=wait_for_move, args=(s,)).start()
+        pub_thread.start()
+        sub_thread.start()
 
-    try:  # Continuous message construction and forwarding to broker
-        while True:
-            move = input("> ").strip()
-            move = f"{move},{topic}"
-            s.send(move.encode())
+        try:
+            while self.playing:
+                continue
 
-    # Possible errors when sending moves (e.g.: broker disconnection)
-    except Exception as e:
-        print(f"Error sending move: {e}")
+        # Handle ctrl+C or manual interruption to close the game
+        except KeyboardInterrupt:
+            print("\nGame ended by the player.")
+            self.playing = False
+            print("Connection closed.\n")
+
+    def publish(self):
+
+        while self.playing:
+            try:
+                msg = input("> ").strip()
+                self.pub.send_multipart([self.topic.encode(), msg.encode()])
+
+            # Handle ctrl+C or manual interruption to close the game
+            except (KeyboardInterrupt, EOFError):
+                break
+
+            # Handle other exceptions
+            except Exception as e:
+                print(f"Error publishing message: {e}")
+                break
+
+    def receive(self):
+
+        while self.playing:
+            try:
+                msg = self.sub.recv_multipart()
+                topic, payload = msg
+                topic = topic.decode()
+                payload = payload.decode()
+                self.process_message(topic, payload)
+
+            # Handle other exceptions
+            except Exception as e:
+                print(f"Error receiving message: {e}")
+                break
+
+    def end_game(self, winner):
+
+        if winner == "Draw":
+            print("\n\t\t### IT'S A DRAW ###")
+        else:
+            print(f"\n\t\t### THE WINNER IS {winner} ###")
+
+        self.playing = False
+        self.pub.close()
+        self.sub.close()
+        self.context.term()
+
+        print("\nGame ended.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
 
-    # TCP socket creation and connection to broker on localhost:9000
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    s.connect((HOST, PORT))
+    player = None
     try:
         while True:
             # Attempt to register a player with a topic ('X' or 'O')
             topic = input("\n\tChoose 'X' or 'O': ").strip().upper()
-
-            if topic:  # Only send if the message has content
-                s.send(topic.encode())
-
-                msg = s.recv(1024).decode()
-                if msg == "OK":
-                    start(s, topic)  # Successful registration
+            if topic in ["X", "O"]:
+                try:
+                    player = Player(topic)
                     break
-                else:
-                    print(msg)  # Unsuccessful registration, retry
+                # Handle error if port is in use (the player has already been registered)
+                except zmq.ZMQError:
+                    print(f"{topic} is already playing, please choose another player.")
+            else:
+                print("Invalid player, please choose 'X' or 'O'.")
+
+        player.start()
 
     # Handle ctrl+C or manual interruption to close the game
     except KeyboardInterrupt:
         print("\nGame ended by the player.")
-        s.close()
+        if player:
+            player.playing = False
         print("Connection closed.\n")

@@ -1,54 +1,5 @@
-import socket
-import interface
-import threading
-
-HOST = "localhost"
-PORT = 9000
-
-# Broker socket
-s = None
-
-# By default, 'X' starts (arbitrarily chosen)
-current_turn = "X"
-
 # Possible topics and their players
 topics = {"X": None, "O": None}
-
-# 3x3 tic-tac-toe board
-board = [
-    ["", "", ""],
-    ["", "", ""],
-    ["", "", ""],
-]
-
-
-def check_winner():
-    """
-    Checks all rows, columns, and the two diagonals of the game board for a winning condition. Also
-    detects if the board is full and the game ends in a draw. If none is satisfied, returns None.
-    """
-
-    # Check every row
-    for row in range(3):
-        if board[row][0] == board[row][1] == board[row][2] and board[row][0] != "":
-            return board[row][0]
-
-    # Check every column
-    for col in range(3):
-        if board[0][col] == board[1][col] == board[2][col] and board[0][col] != "":
-            return board[0][col]
-
-    # Check diagonals
-    if board[0][0] != "" and board[0][0] == board[1][1] == board[2][2]:
-        return board[0][0]
-    if board[0][2] != "" and board[0][2] == board[1][1] == board[2][0]:
-        return board[0][2]
-
-    # Check for a draw
-    if all(cell != "" for row in board for cell in row):
-        return "Draw"
-
-    return None
 
 
 def print_board():
@@ -75,20 +26,6 @@ def release_topic(target):
             topics[topic] = None
             print(f"Player {topic} disconnected.")
             return
-
-
-def is_valid(row, col):
-    """
-    Checks if the move is within the game board's bounds and if the cell is empty.
-    """
-
-    if not (0 <= row < 3 and 0 <= col < 3):
-        return False, "Move out of bounds. Use rows and columns between 0 and 2."
-
-    if board[row][col] != "":
-        return False, "This cell is not empty. Choose a different one."
-
-    return True, ""
 
 
 def handle_messages(player):
