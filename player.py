@@ -1,61 +1,99 @@
 import zmq
 import sys
+import time
 import threading
+from game import Game
+from config import X_PORT, O_PORT
 
-HOST = "localhost"
-PORT = 9000
 
+class Player:
+    def __init__(self, topic):
 
-def wait_for_move(s):
-    """
-    Continuously listens for messages from the broker, these being opponent moves and status
-    updates. If a move message is received, it parses and displays the move. Other messages are
-    printed as updates. It handles regular and win-related disconnections and malformed messages.
-    """
+        self.game = Game()
+        self.topic = topic
+        self.playing = True
+        self.context = zmq.Context()
 
-    try:
-        while True:
-            msg = s.recv(1024).decode()
+        # Publishing to the given port
+        self.pub = self.context.socket(zmq.PUB)
+        self.pub.bind(f"tcp://localhost:{X_PORT if topic == 'X' else O_PORT}")
 
-            # Move type messages
-            parts = msg.split(",")
-            if len(parts) == 2:
-                row = int(parts[0])
-                col = int(parts[1])
-                opp_topic = parts[2]
-                # Console format, entirely for visual purposes
-                print(f"\n\n\t- Opponent {opp_topic} played: Row {row}, Column {col} -")
-                print("\n> ", end="")
-
-            else:
-                # Opponent's turn warning
-                if msg == "Opponent's turn":
-                    print(f"\n\t\t- {msg} -\n> ", end="")
-
-                # Victory message
-                elif msg in ("X", "O"):
-                    print(f"\n\t\t### THE WINNER IS {msg} ###")
-                    s.close()
-
-                # Draw message
-                elif msg == "Draw":
-                    print("\n\t\t### IT'S A DRAW ###")
-                    s.close()
-
-                # Status messages (e.g.: "bad format", "cell not empty")
-                else:
-                    print(f"{msg}\n> ", end="")
-
-    # Reception exceptions handling, omitting socket closing ones, related to the win and end
-    except Exception as e:
-        if isinstance(e, OSError):
-            pass
+        # Subscribing to topics on the other port
+        self.sub = self.context.socket(zmq.SUB)
+        if self.topic == "X":
+            self.sub.connect(f"tcp://localhost:{O_PORT}")
+            self.sub.subscribe("O")
         else:
-            print(f"It's your turn, {self.topic}!")
+            self.sub.connect(f"tcp://localhost:{X_PORT}")
+            self.sub.subscribe("X")
+
+        self.sub.subscribe("ok")  # Topic to acknowledge moves
+        self.sub.subscribe("error")  # Topic to notify errors
+        self.sub.subscribe("end")  # Topic to notify end of game
+
+        print(f"\nYou are player {self.topic}, enter your move (row,col)")
+
+    def process_message(self, topic, payload):
+
+        # End of game handling
+        if topic == "end":
+            self.end_game(payload)
+            return
+
+        # Error handling in case of a returned invalid move
+        if topic == "error":
+            print(f"ERROR: {payload}")
+            return
+
+        try:
+            # Move processing
+            row_str, col_str = payload.split(",")
+            row = int(row_str)
+            col = int(col_str)
+
+            # Move acknowledgment handling
+            if topic == "ok":
+                self.game.make_move(row, col, self.topic)
+                self.game.print_board()
+                return
+
+            # Check turn
+            if self.game.current_turn != topic:
+                self.pub.send_multipart([b"error", b"It is not your turn"])
+                return
+
+            # Check if the move is valid
+            ok, reason = self.game.is_valid(topic, row, col)
+            if not ok:
+                self.pub.send_multipart([b"error", reason.encode()])
+                return
+
+        # In case of incorrect format, an exception is thrown
+        # and has to be handled instead of using regular logic
+        except Exception as e:
+            self.pub.send_multipart([b"error", b"The format is not correct, use (row,col)"])
+            return
+
+        # Update local state and send acknowledge to update opponent's state
+        self.game.make_move(row, col, topic)
+        self.pub.send_multipart([b"ok", f"{row},{col}".encode()])
+
+        print(f"\n\n\t- Opponent {topic} played: Row {row}, Column {col} -")
+        self.game.print_board()
+
+        # Check if the game has ended
+        winner = self.game.check_winner()
+        if winner:
+            # End own game and notify opponent
+            self.pub.send_multipart([b"end", winner.encode()])
+            self.end_game(winner)
+        else:
+            print("> ", end="", flush=True)
 
     def start(self):
 
         print("You start!" if self.topic == "X" else "Waiting for opponent...")
+        self.game.print_board()
 
         # Threads for publishing and receiving
         pub_thread = threading.Thread(target=self.publish, daemon=True)
@@ -80,6 +118,7 @@ def wait_for_move(s):
             try:
                 msg = input("> ").strip()
                 self.pub.send_multipart([self.topic.encode(), msg.encode()])
+                time.sleep(0.2)  # Small delay to allow correct screen update
 
             # Handle ctrl+C or manual interruption to close the game
             except (KeyboardInterrupt, EOFError):
@@ -108,16 +147,14 @@ def wait_for_move(s):
     def end_game(self, winner):
 
         if winner == "Draw":
-            print("\n\t\t### IT'S A DRAW ###")
+            print("\n\t\t### IT'S A DRAW ###\n")
         else:
-            print(f"\n\t\t### THE WINNER IS {winner} ###")
+            print(f"\n\t\t### THE WINNER IS {winner} ###\n")
 
         self.playing = False
         self.pub.close()
         self.sub.close()
         self.context.term()
-
-        print("\nGame ended.")
         sys.exit(0)
 
 
