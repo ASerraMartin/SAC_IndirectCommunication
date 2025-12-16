@@ -1,3 +1,7 @@
+>PENDING README UPDATE
+>PENDING README UPDATE
+>PENDING README UPDATE
+
 # SAC_IndirectCommunication
 
 *A publisher–subscriber distributed system to play Tic-Tac-Toe between two players, implemented with sockets.*
