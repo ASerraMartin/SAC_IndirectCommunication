@@ -1,4 +1,6 @@
 class Game:
+    """Class with the data structures and logic to represent a 3x3 Tic Tac Toe game, with two players ('X' and 'O')."""
+
     def __init__(self):
 
         # By default, 'X' starts (arbitrarily chosen)
@@ -19,18 +21,30 @@ class Game:
 
         # Check every row
         for row in range(3):
-            if self.board[row][0] == self.board[row][1] == self.board[row][2] and self.board[row][0] != "":
+            if (
+                self.board[row][0] == self.board[row][1] == self.board[row][2]
+                and self.board[row][0] != ""
+            ):
                 return self.board[row][0]
 
         # Check every column
         for col in range(3):
-            if self.board[0][col] == self.board[1][col] == self.board[2][col] and self.board[0][col] != "":
+            if (
+                self.board[0][col] == self.board[1][col] == self.board[2][col]
+                and self.board[0][col] != ""
+            ):
                 return self.board[0][col]
 
         # Check diagonals
-        if self.board[0][0] != "" and self.board[0][0] == self.board[1][1] == self.board[2][2]:
+        if (
+            self.board[0][0] != ""
+            and self.board[0][0] == self.board[1][1] == self.board[2][2]
+        ):
             return self.board[0][0]
-        if self.board[0][2] != "" and self.board[0][2] == self.board[1][1] == self.board[2][0]:
+        if (
+            self.board[0][2] != ""
+            and self.board[0][2] == self.board[1][1] == self.board[2][0]
+        ):
             return self.board[0][2]
 
         # Check for a draw

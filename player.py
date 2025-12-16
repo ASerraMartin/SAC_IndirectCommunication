@@ -34,6 +34,15 @@ class Player:
         print(f"\nYou are player {self.topic}, enter your move (row,col)")
 
     def process_message(self, topic, payload):
+        """
+        Processes an incoming message received through the subscriber socket. Depending
+        on the topic, it can:
+
+        - (X/O) Update the game board with a correct move.
+        - (ok) Validate and acknowledge the opponent's moves.
+        - (error) Display an error due to an incorrect move.
+        - (end) Handle the end of the game.
+        """
 
         # End of game handling
         if topic == "end":
@@ -91,6 +100,11 @@ class Player:
             print("> ", end="", flush=True)
 
     def start(self):
+        """
+        Starts the player execution and initializes the game main loop. This method
+        launches the background threads responsible for sending and receiving messages,
+        and keeps the main process alive while the game is active.
+        """
 
         print("You start!" if self.topic == "X" else "Waiting for opponent...")
         self.game.print_board()
@@ -113,6 +127,11 @@ class Player:
             print("Connection closed.\n")
 
     def publish(self):
+        """
+        Handles user input and publishes messages to the opponent through the publisher socket. 
+        This method continuously reads moves from the standard input, formats them as topic messages, 
+        and sends them to be processed by the opponent.
+        """
 
         while self.playing:
             try:
@@ -130,6 +149,10 @@ class Player:
                 break
 
     def receive(self):
+        """
+        Listens for incoming messages from the subscriber socket. This method continuously receives
+        messages from the opponent and processes them to keep the local game state synchronized.
+        """
 
         while self.playing:
             try:
@@ -145,6 +168,10 @@ class Player:
                 break
 
     def end_game(self, winner):
+        """
+        Terminates the game execution in a controlled manner. It stops the running
+        loops, closes all the ZeroMQ sockets, and exits the application afterwards.
+        """
 
         if winner == "Draw":
             print("\n\t\t### IT'S A DRAW ###\n")

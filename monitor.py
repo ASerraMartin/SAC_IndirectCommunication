@@ -4,10 +4,16 @@ import interface
 import threading
 from config import X_PORT, O_PORT
 
+# Stores the last move's topic, waiting to be acknowledged
 move_to_ack = None
 
 
 def start_monitor():
+    """
+    Starts the monitor process that listens to all published messages
+    from both players and updates the GUI accordingly.
+    """
+
     context = zmq.Context()
     listener = context.socket(zmq.SUB)
 
@@ -29,7 +35,7 @@ def start_monitor():
                 print(f"[{topic}] Move: {payload}")
                 move_to_ack = topic
 
-            # Move confirmation handling
+            # Move confirmation handling (draw in GUI)
             elif topic == "ok":
                 print(f"[{topic}] Move acknowledged: {payload}")
                 row_str, col_str = payload.split(",")
