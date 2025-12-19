@@ -1,3 +1,6 @@
+import json
+
+
 class Game:
     """Class with the data structures and logic to represent a 3x3 Tic Tac Toe game, with two players ('X' and 'O')."""
 
@@ -75,6 +78,30 @@ class Game:
 
         self.board[row][col] = topic
         self.current_turn = "O" if self.current_turn == "X" else "X"
+
+    def get_state(self):
+        """Returns the current game state as a dictionary with board and current turn."""
+
+        return {
+            "board": self.board,
+            "turn": self.current_turn
+        }
+
+    def set_state(self, state):
+        """Sets the game state from a dictionary containing board and current turn."""
+
+        self.board = state["board"]
+        self.current_turn = state["turn"]
+
+    def serialize_state(self):
+        """Serializes the current game state to a JSON string."""
+
+        return json.dumps(self.get_state())
+
+    def deserialize_state(self, state_str):
+        """Deserializes a JSON string and sets the game state."""
+        
+        self.set_state(json.loads(state_str))
 
     def print_board(self):
         """

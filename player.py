@@ -7,12 +7,18 @@ from config import X_PORT, O_PORT
 
 
 class Player:
+    """Class with the data structures and logic to represent a player in a Tic Tac Toe game, with two players ('X' and 'O')."""
+
     def __init__(self, topic):
 
         self.game = Game()
         self.topic = topic
         self.playing = True
         self.context = zmq.Context()
+
+        # Flag to track if the state has been received 
+        # (if the opponent is already playing)
+        self.state_received = False
 
         # Publishing to the given port
         self.pub = self.context.socket(zmq.PUB)
@@ -30,6 +36,8 @@ class Player:
         self.sub.subscribe("ok")  # Topic to acknowledge moves
         self.sub.subscribe("error")  # Topic to notify errors
         self.sub.subscribe("end")  # Topic to notify end of game
+        self.sub.subscribe("state_request")  # Topic to request current game state
+        self.sub.subscribe("state_response")  # Topic to receive game state
 
         print(f"\nYou are player {self.topic}, enter your move (row,col)")
 
@@ -42,7 +50,27 @@ class Player:
         - (ok) Validate and acknowledge the opponent's moves.
         - (error) Display an error due to an incorrect move.
         - (end) Handle the end of the game.
+        - (state_request) Request to send current game state.
+        - (state_response) Receive game state from opponent adn and update it.
         """
+
+        # State request handling
+        if topic == "state_request":
+            self.pub.send_multipart([b"state_response", self.game.serialize_state().encode()])
+            return
+
+        # State response handling
+        if topic == "state_response":
+            try:
+                self.state_received = True
+                self.game.deserialize_state(payload)
+                print("\nGame state synchronized with opponent.")
+                self.game.print_board()
+            
+            # Handle exception if the state cannot be deserialized
+            except Exception as e:
+                print(f"Could not synchronize game state: {e}")
+            return
 
         # End of game handling
         if topic == "end":
@@ -55,7 +83,7 @@ class Player:
             return
 
         try:
-            # Move processing
+            # Move processing (for X/O topics)
             row_str, col_str = payload.split(",")
             row = int(row_str)
             col = int(col_str)
@@ -68,18 +96,21 @@ class Player:
 
             # Check turn
             if self.game.current_turn != topic:
+                # Respond with an error message and the current game state
                 self.pub.send_multipart([b"error", b"It is not your turn"])
                 return
 
             # Check if the move is valid
             ok, reason = self.game.is_valid(topic, row, col)
             if not ok:
+                # Respond with an error message and the current game state
                 self.pub.send_multipart([b"error", reason.encode()])
                 return
 
         # In case of incorrect format, an exception is thrown
         # and has to be handled instead of using regular logic
         except Exception as e:
+            # Respond with an error message and the current game state
             self.pub.send_multipart([b"error", b"The format is not correct, use (row,col)"])
             return
 
@@ -107,14 +138,27 @@ class Player:
         """
 
         print("You start!" if self.topic == "X" else "Waiting for opponent...")
-        self.game.print_board()
 
         # Threads for publishing and receiving
         pub_thread = threading.Thread(target=self.publish, daemon=True)
         sub_thread = threading.Thread(target=self.receive, daemon=True)
-
-        pub_thread.start()
+        
         sub_thread.start()
+        time.sleep(0.5)  # Small delay to ensure connection is established
+
+        # Request current game state from opponent if they're already playing
+        self.pub.send_multipart([b"state_request", self.topic.encode()])
+        
+        # Wait for a state response (0.5 second)
+        start_time = time.time()
+        while not self.state_received and (time.time() - start_time) < 0.5:
+            time.sleep(0.1)
+        
+        # If no state was received, print the board
+        if not self.state_received:
+            self.game.print_board()
+        
+        pub_thread.start()
 
         try:
             while self.playing:
@@ -137,7 +181,7 @@ class Player:
             try:
                 msg = input("> ").strip()
                 self.pub.send_multipart([self.topic.encode(), msg.encode()])
-                time.sleep(0.2)  # Small delay to allow correct screen update
+                time.sleep(0.75)  # Small delay to allow correct screen update
 
             # Handle ctrl+C or manual interruption to close the game
             except (KeyboardInterrupt, EOFError):

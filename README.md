@@ -1,10 +1,6 @@
->PENDING README UPDATE <br>
->PENDING README UPDATE <br>
->PENDING README UPDATE <br>
-
 # SAC_IndirectCommunication
 
-*A publisher–subscriber distributed system to play Tic-Tac-Toe between two players, implemented with sockets.*
+*A publisher-subscriber distributed system to play Tic-Tac-Toe between two players, implemented with ZeroMQ sockets.*
 
 Assignment for **Sistemes Actuals de Computació**.
 
@@ -12,11 +8,13 @@ Assignment for **Sistemes Actuals de Computació**.
 
 ## INTRODUCTION
 
-This repository contains the implementation of a distributed indirect communication system based on the publish–subscribe (or *pub-sub*) model, designed to allow the intercommunication between two players through a broker agent, that acts as an intermediary and connection redirector.  
+This repository contains the implementation of a distributed indirect communication system based on the publish-subscribe (or *pub-sub*) model, designed to allow the intercommunication between two players, without a centralized broker in this case.
 
-The project simulates a simple Tic-Tac-Toe (*tres en raya*) game, where all communication between players is handled through `Python` sockets using the aforementioned broker, rather than direct peer-to-peer exchanges, APIs or other previously studied systems.
+The project simulates a simple Tic-Tac-Toe (*tres en raya*) game, where all communication between players is handled through the _ZeroMQ_ library sockets using the pub-sub pattern, rather than direct peer-to-peer exchanges, APIs, or other previously studied systems.
 
-This practice follows as a continuation of the previous practices: `SAC_Sockets` (direct socket communication) and `SAC_RESTFUL` (HTTP-based consensus) this time focusing on **indirect communication mechanisms** within distributed systems.
+This practice follows as a continuation of the previous practices: `SAC_Sockets` (direct socket communication) and `SAC_RESTFUL` (HTTP-based consensus), this time focusing on **indirect communication mechanisms** within distributed systems.
+
+> To run the code, the ZeroMQ library is required: ```pip install zeromq```
 
 ---
 
@@ -24,76 +22,119 @@ This practice follows as a continuation of the previous practices: `SAC_Sockets`
 
 The system consists of two main components:
 
-1. **Players (X and O):** 
-    These entities act simultaneously as publishers and subscribers, since on one hand they need to regularly send messages about their moves and decisions to the broker. On the other hand, the broker in turn forwards those same decisions to each player's counterpart, as a way to inform both of them about the state of the game and therefore share the same global system information.
+1. **Players (X and O):**  
+   Each player acts simultaneously as a publisher and subscriber. Player X binds to port `9001` and subscribes to port `9002`, while Player O does the opposite. This cross-subscription pattern ensures that each player receives the opponent's messages without requiring a central broker.
 
-3. **Broker:**  
-    As previously mentioned, it acts as the message dispatcher between players and overall communication flow controller, performing operations such as the game board update and player turn rotation. It works through topics, precisely two: `X` and `O`, referencing the two typical Tic-Tac-Toe symbols. Mantaining a list of subscribers to each topic, it is able to correctly redirect any incoming message to its corresponding subscriber.
+2. **Monitor (Optional):**  
+   A passive observer that subscribes to both players' topics and displays the game state in a graphical interface built with `tkinter`. The monitor does not participate in the game logic, it only visualizes moves in real time.
 
-    This choice of topics also intends to glimpse the relation between them and each player. Thus, during the player configuration, each of the two agents, X and O, become registered to their symbol's topic, using its counterpart topic as their publishing channel. This way, all messages are sent to the opposite player from the sender. Again, all of this is done via the broker, none of the players control the redirection or direct receivers of their messages.
+Each player runs in its own process (`player.py`) and communicates with the opponent through ZeroMQ pub-sub sockets. There is **no centralized broker**, instead players connect to each other's publishing endpoints, but communicate indirectly in the sense that they simply send messages, that are (indirectly) received by anyone listening (i.e. subscribed to their topic), with the players not necesarilly being targeted directly by the sender to receive their messages.
 
-Each player runs in its own process (`player.py`) and communicates only through the broker (`broker.py`) using TCP sockets. Again, there is **no direct socket connection between the two players**. This reaffirms the previously mentioned indirect communication paradigm. The architecture can be summarized as:
-
-![Diagram](diagram.png)
-
-Additionally, as it can be seen, a basic GUI developed via `tkinter` (preinstalled with `Python`) has been also added to the system. Its objective is to provide greater ease and quality of the user experience in the handling and visualization of the system's information.
+Additionally, a GUI developed via `tkinter` (preinstalled with Python) provides real-time visualization of the game state when running the monitor, if desired.
 
 ---
 
 ### COMMUNICATION FLOW
 
-1. Both players connect to the broker and subscribe to their symbols' topic (X or O).
-2. The broker registers both subscriptions and awaits incoming publications.
-3. The newly registered player starts its game loop, prompting the user for a move.
-4. When a player performs a move, it directs it to the broker, to publish it to the corresponding topic.
-4. The broker receives the publication and forwards the message to all other subscribers (in this case, only the opponent).
-5. Each player outputs the received moves on screen and the GUI hanging from the broker updates accordingly.
-6. The process continues until a player wins or the board is full, at which point the broker notifies all clients of the game's end and these terminate their connections.
+1. Each player binds a PUB socket to their assigned port and connects a SUB socket to the opponent's port.
+2. Players subscribe to relevant topics: opponent's symbol (`X` or `O`), `ok` (move acknowledgment), `error`, `end`, `state_request`, and `state_response`.
+3. When a player starts, it automatically requests the current game state from the opponent using `state_request`. If the opponent is already playing, it responds with `state_response` containing the current board state and turn. If no response is received within 0.5 seconds, the player displays an empty board by default and continues.
+4. When a player makes a move, they publish it to their own topic.
+5. The opponent receives the move, validates it, updates their local game state, and sends an `ok` acknowledgment.
+6. If the move is invalid, an `error` message is sent back instead.
+7. The process continues until a player wins or the board is full, at which point an `end` message is published.
+
+**State Synchronization:**
+
+The system includes a state synchronization mechanism that allows players to recover the current game state when connecting. This is particularly useful if a player disconnects and reconnects, since it allows to rejoin and restore the game state. The synchronization uses these two topics:
+- `state_request`: Sent by a player to request the current game state
+- `state_response`: Contains the serialized game state (board and current turn) in JSON format
+
+This ensures that both players maintain a consistent view of the game board, enabling proper turn management and game state verification, even in the case of a rejoin.
 
 ---
 
 ## DEPLOYMENT
 
-The system can be launched either manually or executing the `run.bat` file. This simple batch process executes the following code:
+### With GUI Monitor
+
+Run the `run_gui.bat` file to start the monitor with the graphical interface and two players:
 
 ```bash
 @echo off
-start cmd /k python broker.py
+start cmd /k python monitor.py
 timeout /t 1 >nul
 start cmd /k python player.py
 start cmd /k python player.py
 ```
-It opens three terminals: firstly the broker, on which the two players depend, then executes a short wait just to allow the broker to start correctly, and finally executes two times the player script to generate two initially identical players. 
 
-For the manual execution, simply open three terminals on the root directory of this project and execute in the same order.
+### Players Only (No GUI)
+
+Run the `run.bat` file that executes:
+
+```bash
+@echo off
+start cmd /k python player.py
+start cmd /k python player.py
+```
+
+### Manually
+
+Open two terminals and execute
+```bash
+python player.py
+```
+
+Each player will be prompted to choose their symbol (`X` or `O`). Player X always starts first.
 
 ---
 
-## DESIGN DECISIONS
+## DESIGN DECISIONS AND SCALABILITY/ERROR TOLERANCE CONSIDERATIONS
 
-- **Broker Centralization:**  
-    The decision of having a centralized broker has helped in keeping message order consistent and ensuring all players stay synchronized. It simplifies coordination by managing all the communication in one place, making it easier to handle game events and updates smoothly.
+The architectural choices made in this project reflect a balance between simplicity, reliability, and the educational goals of demonstrating indirect communication patterns. Several key decisions shape the system's behavior and limitations:
 
-- **Simplicity over Scalability:**  
-    Being a Tic-Tac-Toe, this concept would be very complex to scale, therefore the system has been designed exclusively for two players, each publishing and subscribing to only one (different) topic.
+**Architectural Design:**
 
-- **Complementary GUI**  
-    A simple, complementary Graphic User Interface (`interface.py`) has been added to the project to allow for a better (and fancier) visualization of the state of the game in real time, leading to an overall better user experience when playing the game.
+By using ZeroMQ pub-sub pattern, the implementation provides a brokerless approach, where players connect to each other without an intermediary, eliminating the single point of failure inherent in broker-based designs. However, this still means that if one player disconnects, the entire game session is compromised. A trade-off that reflects the game's inherently coupled nature.
 
-- **Entry control**  
-    The different possible entries and problematic inputs are controlled and warned to the players when bypassed (e.g.: wrong formats, moves out of bounds, etc.). This has led to an overall simpler to use and manage system, even though a tad more complex internally.
+The topic-based message categorization (`X`, `O`, `ok`, `error`, `end`, `state_request`, `state_response`) provides structured communication and enables proper message routing. This design allows a clear separation of actions: game moves, acknowledgments, error handling, state synchronization, and termination signals are all handled through distinct channels, making the system more maintainable and easier to debug.
+
+**Scalability Considerations:**
+
+The system has been intentionally designed with simplicity over scalability in mind. Being a Tic-Tac-Toe game, the architecture is fixed to exactly two players, each publishing and subscribing to complementary topics. Scaling beyond two players would require significant architectural changes, including dynamic topic management, player registration mechanisms, and more complex game state synchronization.
+
+**Error Tolerance:**
+
+Input validation is implemented at multiple levels: format checking, boundary validation, turn order enforcement, and cell availability verification. All invalid inputs result in appropriate error messages being sent back to the player, ensuring robust error handling. 
+
+The system includes state synchronization capabilities that allow players to recover the game state when connecting. When a player starts, it automatically requests the current state from the opponent. If the opponent is already playing, it responds with the complete board state, allowing the new player to continue the game from where it was left. This provides a basic form of fault tolerance for player reconnection scenarios.
+
+However, this kind of architecture and implementation still lacks mechanisms for handling network failures, message loss, or complete player disconnections during an active game session.
+
+**User Experience:**
+
+A complementary graphical interface (`interface.py`) with a passive monitor (`monitor.py`) provides real-time visualization of the game state, enhancing the user experience without interfering with the core communication logic. The monitor operates as a pure observer, demonstrating how pub-sub systems can support multiple subscribers without affecting the primary communication flow.
+
 ---
 
 ## CONCLUSIONS
 
-The resulting system provides several notable benefits. Firstly, it establishes a separation between the communication and game logic layers, allowing each to function independently from the others. This modularity enhances maintainability and flexibility, allowing for additional features to be added easily. Centralized control through the broker further simplifies synchronization, ensuring consistent message flow and coordination across the system.
+The resulting system successfully demonstrates the pub-sub communication pattern in a practical context. The brokerless ZeroMQ architecture allows messaging between players while maintaining the decoupled and indirect nature that characterizes publish-subscribe systems. This approach showcases how distributed systems can achieve communication without direct coupling between components.
 
-However, this approach also introduces potential bottlenecks and problems. The broker becomes a single point of failure, which can compromise system reliability if not properly managed. Moreover, while using TCP sockets to simulate publish-subscribe behavior serves an educational purpose, it is less practical for real-world distributed systems compared to specialized tools like Kafka, MQTT, or Redis pub/sub, which offer more robust and scalable solutions.
+The implementation provides several notable advantages. The absence of a central broker eliminates a single point of failure, improving the system's resilience compared to traditional broker-based architectures. The clean separation between game logic (handled in `game.py`) and communication mechanisms (managed through ZeroMQ sockets) enhances maintainability and allows each component to evolve independently. 
 
-Despite these limitations, the project effectively achieves its goal of demonstrating indirect communication patterns. However, the given example, based on a simple Tic-Tac-Toe game, did not offer much room for complexity, as the interaction between players was highly structured and followed a linear sequence. This constrained the communication flow, limiting the opportunity to showcase more dynamic or asynchronous messaging scenarios typical of distributed systems, as it could have been done with a system similar to the lottery one from the first practice.
+The state synchronization mechanism ensures that players can recover the game state when connecting, providing a basic form of fault tolerance. When a player starts, it automatically requests the current state from the opponent, and if available, synchronizes its local game state accordingly. This allows players to maintain a consistent view of the game board throughout the session. Furthermore, the system achieves real-time synchronization between players during gameplay, ensuring both maintain consistent game state through the pub-sub messaging pattern.
+
+However, the system also faces inherent limitations that come from the nature of the application. The architecture is fixed to exactly two players due to the game's fundamental structure, making horizontal scaling impossible without a complex escalation and redesign. The system requires both players to be running simultaneously for communication to function, creating a tight coupling that limits fault tolerance.
+
+Despite these limitations, the project effectively achieves its goal of demonstrating indirect communication patterns. However, the given example based on a simple Tic-Tac-Toe game, did not offer much room for complexity, as the 
+interaction between players was highly structured and followed a linear sequence. This constrained the communication flow, limiting the opportunity to showcase more dynamic or asynchronous messaging scenarios typical of distributed systems, 
+as it could have been done with a system similar to the lottery one from the first practice. 
+
+All in all, the project serves as a solid foundation for understanding the principles and trade-offs involved in indirect communication mechanisms, demonstrating both the strengths and limitations of pub-sub architectures in a concrete, accessible context.
 
 ---
 
 ## AUTHOR
 
-**Adrià Serra Martín**  
+**Adrià Serra Martín**
