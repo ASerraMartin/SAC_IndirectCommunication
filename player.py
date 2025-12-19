@@ -96,21 +96,18 @@ class Player:
 
             # Check turn
             if self.game.current_turn != topic:
-                # Respond with an error message and the current game state
                 self.pub.send_multipart([b"error", b"It is not your turn"])
                 return
 
             # Check if the move is valid
             ok, reason = self.game.is_valid(topic, row, col)
             if not ok:
-                # Respond with an error message and the current game state
                 self.pub.send_multipart([b"error", reason.encode()])
                 return
 
         # In case of incorrect format, an exception is thrown
         # and has to be handled instead of using regular logic
         except Exception as e:
-            # Respond with an error message and the current game state
             self.pub.send_multipart([b"error", b"The format is not correct, use (row,col)"])
             return
 
